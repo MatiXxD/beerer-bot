@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/MatiXxD/beerer-bot/config"
 	"github.com/MatiXxD/beerer-bot/internal/app"
-	"github.com/rs/zerolog/log"
 )
 
 func main() {

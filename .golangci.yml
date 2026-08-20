@@ -1,0 +1,72 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - copyloopvar
+    - durationcheck
+    - errorlint
+    - nilerr
+    - rowserrcheck
+    - sqlclosecheck
+    - noctx
+    - gocritic
+    - revive
+    - misspell
+    - unconvert
+    - unparam
+    - goconst
+    - prealloc
+    - modernize
+    - gosec
+
+  settings:
+    errcheck:
+      check-blank: false
+      check-type-assertions: true
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+      disabled-checks:
+        - hugeParam
+
+    govet:
+      enable:
+        - shadow
+
+    revive:
+      rules:
+        - name: unused-parameter
+          arguments:
+            - allow-regex: "^_"
+
+  exclusions:
+    presets:
+      - common-false-positives
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - goconst
+          - dupl
+    paths:
+      - ".*\\.pb\\.go$"
+      - ".*_gen\\.go$"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/MatiXxD/beerer-bot

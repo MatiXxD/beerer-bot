@@ -22,12 +22,12 @@ type HttpError struct {
 }
 
 // WriteJSON writes a JSON response to the writer.
-func WriteJSON(ctx context.Context, w http.ResponseWriter, data interface{}) {
+func WriteJSON(ctx context.Context, w http.ResponseWriter, data any) {
 	WriteStatusJSON(ctx, w, http.StatusOK, data)
 }
 
 // WriteStatusJSON writes a JSON response with a specific status code to the writer.
-func WriteStatusJSON(ctx context.Context, w http.ResponseWriter, status int, data interface{}) {
+func WriteStatusJSON(ctx context.Context, w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 
 	w.WriteHeader(status)
