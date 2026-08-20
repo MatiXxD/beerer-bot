@@ -8,6 +8,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	TagUnexpected = "UNEXPECTED"
+)
+
 // ZerologConfig represents the configuration of the zerolog logger.
 type ZerologConfig struct {
 	AppName       string `mapstructure:"appname"`
