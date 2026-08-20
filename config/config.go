@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MatiXxD/beerer-bot/pkg/logger"
 	"github.com/spf13/viper"
+
+	"github.com/MatiXxD/beerer-bot/pkg/logger"
 )
 
 // AppConfig config represents the configuration of the application.

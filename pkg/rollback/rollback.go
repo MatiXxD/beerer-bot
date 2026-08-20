@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 )
 
@@ -36,8 +37,7 @@ func (rb *Rollback) Run() error {
 
 	var errs []error
 
-	for i := len(rb.rollbacks) - 1; i >= 0; i-- {
-		f := rb.rollbacks[i]
+	for _, f := range slices.Backward(rb.rollbacks) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -65,8 +65,7 @@ func (rb *Rollback) RunAsync() error {
 		wg    sync.WaitGroup
 	)
 
-	for i := len(rb.rollbacks) - 1; i >= 0; i-- {
-		f := rb.rollbacks[i]
+	for _, f := range slices.Backward(rb.rollbacks) {
 		wg.Go(func() {
 			defer func() {
 				if r := recover(); r != nil {

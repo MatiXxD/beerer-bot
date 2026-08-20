@@ -5,10 +5,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/rs/zerolog"
+
 	"github.com/MatiXxD/beerer-bot/config"
 	"github.com/MatiXxD/beerer-bot/pkg/logger"
 	"github.com/MatiXxD/beerer-bot/pkg/utils"
-	"github.com/rs/zerolog"
 )
 
 // DI represents the dependency injection container.
@@ -29,7 +30,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	// prepare global context
 	ctx = utils.SetZeroLogger(ctx, di.log)
 
-	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	_, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	// just log for now
