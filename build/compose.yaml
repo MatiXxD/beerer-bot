@@ -1,0 +1,9 @@
+services:
+  beerer-bot:
+    container_name: beerer-bot
+    build:
+      context: ..
+      dockerfile: build/image/Dockerfile
+    volumes:
+      - ../config/config.yaml:/beerer-bot/config/config.yaml:ro
+    command: ./beerer-bot --config ./config/config.yaml

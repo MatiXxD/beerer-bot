@@ -1,0 +1,7 @@
+app:
+  name: "beerer-bot"
+  version: "0.0.1"
+
+logger:
+  level: debug
+  pretty_console: true
