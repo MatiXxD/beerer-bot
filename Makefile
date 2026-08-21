@@ -44,6 +44,10 @@ build/bin/golangci-lint:
 lint: install-linter
 	$(GOLANGCI_LINT) run ./...
 
+.PHONY: test
+test:
+	$(GO) test -race ./...
+
 
 # ======================================================================
 # DOCKER-COMPOSE

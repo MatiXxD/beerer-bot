@@ -33,37 +33,35 @@ func NewBot(src UpdateSource, h Handler) *Bot {
 func (b *Bot) Run(ctx context.Context) error {
 	const op = utils.Operation("Bot.Run")
 
-	log := utils.GetZeroLogger(ctx)
-
 	updates, err := b.source.Updates()
 	if err != nil {
 		return op.WithErr(err)
 	}
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		<-ctx.Done()
+	defer b.dispatcher.Stop()
 
-		stopErr := b.source.Stop()
-		if err != nil {
-			log.Error().
-				Err(op.WithErrAndMsg(stopErr, "failed to stop update source")).
-				Msg("failed to stop update source")
+	for {
+		select {
+		case <-ctx.Done():
+			if err = b.source.Stop(); err != nil {
+				return op.WithErrAndMsg(err, "failed to stop update source")
+			}
+
+			if err = ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+				return op.WithErr(err)
+			}
+
+			return nil
+		case upd, ok := <-updates:
+			if !ok {
+				if err = b.source.Stop(); err != nil {
+					return op.WithErrAndMsg(err, "failed to stop update source")
+				}
+
+				return nil
+			}
+
+			b.dispatcher.Dispatch(ctx, upd)
 		}
-	}()
-
-	for upd := range updates {
-		b.dispatcher.Dispatch(ctx, upd)
 	}
-
-	// blocks until the done channel is closed
-	<-done
-	b.dispatcher.Stop()
-
-	if !errors.Is(err, context.Canceled) {
-		return op.WithErr(err)
-	}
-
-	return nil
 }

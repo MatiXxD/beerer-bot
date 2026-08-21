@@ -8,7 +8,6 @@ import (
 	"github.com/MatiXxD/beerer-bot/pkg/logger"
 	"github.com/MatiXxD/beerer-bot/pkg/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/rs/zerolog/log"
 )
 
 // Dispatcher represents dispatcher for telegram bot.
@@ -33,7 +32,7 @@ func NewDispatcher(h Handler) *Dispatcher {
 
 // Dispatch dispatches the update to the handler.
 func (d *Dispatcher) Dispatch(ctx context.Context, upd tgbotapi.Update) {
-	log := utils.GetZeroLogger(context.Background())
+	log := utils.GetZeroLogger(ctx)
 
 	from := upd.SentFrom()
 	if from == nil {
@@ -50,7 +49,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, upd tgbotapi.Update) {
 		d.queues[from.ID] = q
 		d.wg.Add(1)
 
-		go d.worker(ctx, from.ID, q)
+		// keep context values, but let queued updates finish during graceful
+		// shutdown after the application context is canceled.
+		go d.worker(context.WithoutCancel(ctx), from.ID, q)
 	}
 
 	// logging if queue is full
@@ -122,6 +123,8 @@ func (d *Dispatcher) worker(
 // handle handles the update.
 func (d *Dispatcher) handle(ctx context.Context, upd tgbotapi.Update) {
 	const op = utils.Operation("Dispatcher.handle")
+
+	log := utils.GetZeroLogger(ctx)
 
 	ctx, cancel := context.WithTimeout(ctx, defaultHandleTimeout)
 	defer cancel()

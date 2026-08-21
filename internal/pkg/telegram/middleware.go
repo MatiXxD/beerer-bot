@@ -28,14 +28,16 @@ func Recovery() Middleware {
 func Logging() Middleware {
 	return func(next Handler) Handler {
 		return func(ctx context.Context, upd tgbotapi.Update) error {
-			var (
-				log  = utils.GetZeroLogger(ctx)
-				from = upd.SentFrom()
-			)
+			log := utils.GetZeroLogger(ctx)
 
-			if from != nil {
-				log.Info().Msgf("received message %d from user %+v", upd.Message.MessageID, from)
-			} else {
+			switch {
+			case upd.Message != nil:
+				log.Info().Msgf("received message %d from user %+v", upd.Message.MessageID, upd.Message.From)
+			case upd.CallbackQuery != nil:
+				log.Info().Msgf("received callback query %s from user %+v", upd.CallbackQuery.ID, upd.CallbackQuery.From)
+			case upd.InlineQuery != nil:
+				log.Info().Msgf("received inline query %s from user %+v", upd.InlineQuery.ID, upd.InlineQuery.From)
+			default:
 				log.Info().Msgf("received update %d from unknown user", upd.UpdateID)
 			}
 
