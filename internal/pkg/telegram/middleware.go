@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"github.com/MatiXxD/beerer-bot/pkg/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	"github.com/MatiXxD/beerer-bot/pkg/utils"
 )
 
 // Recovery is a middleware that recovers from panics.

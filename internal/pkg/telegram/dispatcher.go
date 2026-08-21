@@ -5,9 +5,10 @@ import (
 	"sync"
 	"time"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
 	"github.com/MatiXxD/beerer-bot/pkg/logger"
 	"github.com/MatiXxD/beerer-bot/pkg/utils"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // Dispatcher represents dispatcher for telegram bot.

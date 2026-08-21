@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MatiXxD/beerer-bot/pkg/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/rs/zerolog"
+
+	"github.com/MatiXxD/beerer-bot/pkg/utils"
 )
 
 func TestRecovery(t *testing.T) {

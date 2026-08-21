@@ -1,8 +1,9 @@
 package telegram
 
 import (
-	"github.com/MatiXxD/beerer-bot/pkg/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	"github.com/MatiXxD/beerer-bot/pkg/utils"
 )
 
 // LongPolling is a struct that represents the long polling mechanism for receiving

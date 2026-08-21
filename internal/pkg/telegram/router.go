@@ -2,11 +2,13 @@ package telegram
 
 import (
 	"context"
+	"slices"
 	"strings"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"github.com/MatiXxD/beerer-bot/pkg/logger"
 	"github.com/MatiXxD/beerer-bot/pkg/utils"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // Handler represents a function that handles a Telegram update.
@@ -67,7 +69,7 @@ func (r *Router) Handle(ctx context.Context, upd tgbotapi.Update) error {
 	h := r.resolveHandler(upd)
 
 	// apply middlewares
-	for i := len(r.middlewares) - 1; i >= 0; i-- {
+	for i := range slices.Backward(r.middlewares) {
 		h = r.middlewares[i](h)
 	}
 
@@ -98,7 +100,7 @@ func (r *Router) resolveHandler(upd tgbotapi.Update) Handler {
 }
 
 // fallbackHandler represents a fallback handler, which will be used when no other handler is found.
-func fallbackHandler(ctx context.Context, upd tgbotapi.Update) error {
+func fallbackHandler(ctx context.Context, _ tgbotapi.Update) error {
 	log := utils.GetZeroLogger(ctx)
 	log.Warn().
 		Str(logger.TagUnexpected, "handler was not found -> using fallback").
