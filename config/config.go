@@ -16,10 +16,17 @@ type AppConfig struct {
 	Version string `mapstructure:"version"`
 }
 
+// TelegramBotConfig config represents the configuration of the Telegram bot.
+type TelegramBotConfig struct {
+	BotToken    string `mapstructure:"bot_token"`
+	LongPolling bool   `mapstructure:"long_polling"`
+}
+
 // Config structs that contain all configuration for the application.
 type Config struct {
-	AppCfg AppConfig            `mapstructure:"app"`
-	Logger logger.ZerologConfig `mapstructure:"logger"`
+	AppCfg      AppConfig            `mapstructure:"app"`
+	TelegramBot TelegramBotConfig    `mapstructure:"telegram_bot"`
+	Logger      logger.ZerologConfig `mapstructure:"logger"`
 }
 
 // Load loads the configuration.
