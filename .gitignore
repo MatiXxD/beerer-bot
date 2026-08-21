@@ -33,3 +33,6 @@ go.work.sum
 
 # Folder for compiled binaries
 bin/
+
+# Secrets
+config/config-prod.yaml

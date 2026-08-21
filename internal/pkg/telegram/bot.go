@@ -54,7 +54,7 @@ func (b *Bot) Run(ctx context.Context) error {
 	}()
 
 	for upd := range updates {
-		b.dispatcher.Dispatch(upd)
+		b.dispatcher.Dispatch(ctx, upd)
 	}
 
 	// blocks until the done channel is closed

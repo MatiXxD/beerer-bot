@@ -48,16 +48,18 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	// prepare telegram bot
 	err = initBot(&di)
 	if err != nil {
-		return fmt.Errorf("failed to run the application: %w", err)
+		return fmt.Errorf("failed to run the application: %v", err)
 	}
 
 	// domains
 	UserDomain(&di)
 
 	// start telegram bot
+	di.log.Info().Msg("starting bot...")
+
 	err = di.bot.Run(ctx)
 	if err != nil {
-		return fmt.Errorf("bot failed with: %w", err)
+		return fmt.Errorf("bot failed with: %v", err)
 	}
 
 	return nil
@@ -65,6 +67,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 // initBot initialize all that is needed for the bot to work.
 func initBot(di *DI) error {
+	// TODO: не забыть накинуть конфиг на пакет с telegram ботом
 	var err error
 
 	// create telegram api
@@ -75,6 +78,15 @@ func initBot(di *DI) error {
 
 	// create router
 	di.router = telegram.NewRouter()
+
+	mws := []telegram.Middleware{
+		telegram.Recovery(),
+		telegram.Logging(),
+	}
+
+	for _, mw := range mws {
+		di.router.Use(mw)
+	}
 
 	// use long polling if specified in config, otherwise use webhook
 	if di.cfg.TelegramBot.LongPolling {

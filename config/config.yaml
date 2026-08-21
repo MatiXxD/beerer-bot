@@ -3,7 +3,7 @@ app:
   version: "0.0.1"
 
 telegram_bot:
-  bot_token: tg_bot_token
+  bot_token: "your_tg_bot_token"
   long_polling: true
 
 logger:

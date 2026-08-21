@@ -32,7 +32,7 @@ func NewDispatcher(h Handler) *Dispatcher {
 }
 
 // Dispatch dispatches the update to the handler.
-func (d *Dispatcher) Dispatch(upd tgbotapi.Update) {
+func (d *Dispatcher) Dispatch(ctx context.Context, upd tgbotapi.Update) {
 	log := utils.GetZeroLogger(context.Background())
 
 	from := upd.SentFrom()
@@ -50,7 +50,7 @@ func (d *Dispatcher) Dispatch(upd tgbotapi.Update) {
 		d.queues[from.ID] = q
 		d.wg.Add(1)
 
-		go d.worker(from.ID, q)
+		go d.worker(ctx, from.ID, q)
 	}
 
 	// logging if queue is full
@@ -70,7 +70,11 @@ func (d *Dispatcher) Stop() {
 }
 
 // worker processes updates from the user.
-func (d *Dispatcher) worker(userID int64, q chan tgbotapi.Update) {
+func (d *Dispatcher) worker(
+	ctx context.Context,
+	userID int64,
+	q chan tgbotapi.Update,
+) {
 	defer d.wg.Done()
 
 	idle := time.NewTimer(defaultWorkerIdleTTL)
@@ -79,7 +83,7 @@ func (d *Dispatcher) worker(userID int64, q chan tgbotapi.Update) {
 	for {
 		select {
 		case upd := <-q:
-			d.handle(upd)
+			d.handle(ctx, upd)
 
 			if !idle.Stop() {
 				<-idle.C
@@ -91,7 +95,7 @@ func (d *Dispatcher) worker(userID int64, q chan tgbotapi.Update) {
 			for {
 				select {
 				case upd := <-q:
-					d.handle(upd)
+					d.handle(ctx, upd)
 				default:
 					d.mu.Lock()
 					delete(d.queues, userID)
@@ -116,10 +120,10 @@ func (d *Dispatcher) worker(userID int64, q chan tgbotapi.Update) {
 }
 
 // handle handles the update.
-func (d *Dispatcher) handle(upd tgbotapi.Update) {
+func (d *Dispatcher) handle(ctx context.Context, upd tgbotapi.Update) {
 	const op = utils.Operation("Dispatcher.handle")
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultHandleTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultHandleTimeout)
 	defer cancel()
 
 	if err := d.handler(ctx, upd); err != nil {
