@@ -37,3 +37,6 @@ vendor/
 
 # Secrets
 config/config-prod.yaml
+
+# SQLite files
+data/

@@ -6,6 +6,9 @@ telegram_bot:
   bot_token: "your_tg_bot_token"
   long_polling: true
 
+sqlite:
+  path: "data/beerer.db"
+
 logger:
   level: debug
   pretty_console: true

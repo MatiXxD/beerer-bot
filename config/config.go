@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MatiXxD/beerer-bot/pkg/sqlite"
 	"github.com/spf13/viper"
 
 	"github.com/MatiXxD/beerer-bot/internal/pkg/telegram"
@@ -27,6 +28,7 @@ type TelegramBotConfig struct {
 type Config struct {
 	AppCfg      AppConfig            `mapstructure:"app"`
 	TelegramBot TelegramBotConfig    `mapstructure:"telegram_bot"`
+	Sqlite      sqlite.Config        `mapstructure:"sqlite"`
 	Logger      logger.ZerologConfig `mapstructure:"logger"`
 }
 

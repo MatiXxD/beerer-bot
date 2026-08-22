@@ -5,6 +5,7 @@ services:
       context: ..
       dockerfile: build/image/Dockerfile
     volumes:
+      - ../data:/beerer-bot/data/:rw
       - ../config/:/beerer-bot/config/:ro
 #    command: ./beerer-bot --config ./config/config.yaml
     command: ./beerer-bot --config ./config/config-prod.yaml
