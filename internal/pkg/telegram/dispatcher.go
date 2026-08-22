@@ -19,15 +19,17 @@ type Dispatcher struct {
 	wg   sync.WaitGroup
 	done chan struct{}
 
+	cfg    DispatcherConfig
 	queues map[int64]chan tgbotapi.Update
 }
 
 // NewDispatcher creates a new dispatcher.
-func NewDispatcher(h Handler) *Dispatcher {
+func NewDispatcher(h Handler, cfg DispatcherConfig) *Dispatcher {
 	return &Dispatcher{
 		handler: h,
 		queues:  make(map[int64]chan tgbotapi.Update),
 		done:    make(chan struct{}),
+		cfg:     cfg,
 	}
 }
 
@@ -46,7 +48,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, upd tgbotapi.Update) {
 	// create queue for the user if it doesn't exist'
 	q, ok := d.queues[from.ID]
 	if !ok {
-		q = make(chan tgbotapi.Update, defaultQueueSize)
+		q = make(chan tgbotapi.Update, d.cfg.QueueSize)
 		d.queues[from.ID] = q
 		d.wg.Add(1)
 
@@ -79,7 +81,7 @@ func (d *Dispatcher) worker(
 ) {
 	defer d.wg.Done()
 
-	idle := time.NewTimer(defaultWorkerIdleTTL)
+	idle := time.NewTimer(d.cfg.WorkerIdleTTL)
 	defer idle.Stop()
 
 	for {
@@ -91,7 +93,7 @@ func (d *Dispatcher) worker(
 				<-idle.C
 			}
 
-			idle.Reset(defaultWorkerIdleTTL)
+			idle.Reset(d.cfg.WorkerIdleTTL)
 		case <-d.done:
 			// handle all user's updates before return
 			for {
@@ -116,7 +118,7 @@ func (d *Dispatcher) worker(
 			}
 
 			d.mu.Unlock()
-			idle.Reset(defaultWorkerIdleTTL)
+			idle.Reset(d.cfg.WorkerIdleTTL)
 		}
 	}
 }
@@ -127,7 +129,7 @@ func (d *Dispatcher) handle(ctx context.Context, upd tgbotapi.Update) {
 
 	log := utils.GetZeroLogger(ctx)
 
-	ctx, cancel := context.WithTimeout(ctx, defaultHandleTimeout)
+	ctx, cancel := context.WithTimeout(ctx, d.cfg.HandleTimeout)
 	defer cancel()
 
 	if err := d.handler(ctx, upd); err != nil {

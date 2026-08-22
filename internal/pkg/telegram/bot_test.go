@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/stretchr/testify/require"
 )
 
 type stubUpdateSource struct {
@@ -16,19 +17,16 @@ type stubUpdateSource struct {
 	stopped    chan struct{}
 }
 
-func (s *stubUpdateSource) Updates() (<-chan tgbotapi.Update, error) {
-	return s.updates, s.updatesErr
+func newTestBot(source UpdateSource, handler Handler, cfg Config) *Bot {
+	return &Bot{
+		source:     source,
+		dispatcher: NewDispatcher(handler, cfg.Dispatcher),
+		cfg:        cfg,
+	}
 }
 
-func TestBotRunReturnsUpdatesError(t *testing.T) {
-	updatesErr := errors.New("updates failed")
-	source := &stubUpdateSource{updatesErr: updatesErr, stopped: make(chan struct{})}
-	bot := NewBot(source, func(context.Context, tgbotapi.Update) error { return nil })
-
-	err := bot.Run(context.Background())
-	if !errors.Is(err, updatesErr) {
-		t.Fatalf("Run() error = %v, want it to wrap %v", err, updatesErr)
-	}
+func (s *stubUpdateSource) Updates() (<-chan tgbotapi.Update, error) {
+	return s.updates, s.updatesErr
 }
 
 func (s *stubUpdateSource) Stop() error {
@@ -41,6 +39,33 @@ func (s *stubUpdateSource) Stop() error {
 	return s.stopErr
 }
 
+func TestNewBotAppliesConfig(t *testing.T) {
+	apiClient := &telegramAPIClient{}
+	api := apiClient.bot(t)
+	bot := NewBot(func(context.Context, tgbotapi.Update) error { return nil }, api, Config{
+		LongPolling: LongPollingConfig{Enabled: true},
+	})
+
+	require.Equal(t, defaultLongPollingTimeout, bot.cfg.LongPolling.Timeout)
+	require.Equal(t, defaultQueueSize, bot.cfg.Dispatcher.QueueSize)
+	require.Equal(t, defaultWorkerIdleTTL, bot.cfg.Dispatcher.WorkerIdleTTL)
+	require.Equal(t, defaultHandleTimeout, bot.cfg.Dispatcher.HandleTimeout)
+	require.Equal(t, bot.cfg.Dispatcher, bot.dispatcher.cfg)
+
+	source, ok := bot.source.(*LongPolling)
+	require.True(t, ok)
+	require.Equal(t, bot.cfg.LongPolling, source.cfg)
+}
+
+func TestBotRunReturnsUpdatesError(t *testing.T) {
+	updatesErr := errors.New("updates failed")
+	source := &stubUpdateSource{updatesErr: updatesErr, stopped: make(chan struct{})}
+	bot := newTestBot(source, func(context.Context, tgbotapi.Update) error { return nil }, testConfig())
+
+	err := bot.Run(context.Background())
+	require.ErrorIs(t, err, updatesErr)
+}
+
 func TestBotRunReturnsOnClosedUpdates(t *testing.T) {
 	source := &stubUpdateSource{
 		updates: make(chan tgbotapi.Update),
@@ -48,17 +73,15 @@ func TestBotRunReturnsOnClosedUpdates(t *testing.T) {
 	}
 	close(source.updates)
 
-	bot := NewBot(source, func(context.Context, tgbotapi.Update) error { return nil })
+	bot := newTestBot(source, func(context.Context, tgbotapi.Update) error { return nil }, testConfig())
 	done := make(chan error, 1)
 	go func() { done <- bot.Run(context.Background()) }()
 
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run() returned an unexpected error: %v", err)
-		}
+		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("Run() did not return after the updates channel was closed")
+		require.FailNow(t, "Run() did not return after the updates channel was closed")
 	}
 }
 
@@ -67,18 +90,16 @@ func TestBotRunTreatsCancellationAsGracefulShutdown(t *testing.T) {
 		updates: make(chan tgbotapi.Update),
 		stopped: make(chan struct{}),
 	}
-	bot := NewBot(source, func(context.Context, tgbotapi.Update) error { return nil })
+	bot := newTestBot(source, func(context.Context, tgbotapi.Update) error { return nil }, testConfig())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := bot.Run(ctx); err != nil {
-		t.Fatalf("Run() returned an unexpected error: %v", err)
-	}
+	require.NoError(t, bot.Run(ctx))
 
 	select {
 	case <-source.stopped:
 	default:
-		t.Fatal("Run() did not stop the update source")
+		require.FailNow(t, "Run() did not stop the update source")
 	}
 }
 
@@ -89,14 +110,13 @@ func TestBotRunReturnsStopError(t *testing.T) {
 		stopErr: stopErr,
 		stopped: make(chan struct{}),
 	}
-	bot := NewBot(source, func(context.Context, tgbotapi.Update) error { return nil })
+
+	bot := newTestBot(source, func(context.Context, tgbotapi.Update) error { return nil }, testConfig())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	err := bot.Run(ctx)
-	if !errors.Is(err, stopErr) {
-		t.Fatalf("Run() error = %v, want it to wrap %v", err, stopErr)
-	}
+	require.ErrorIs(t, err, stopErr)
 }
 
 func TestBotRunReturnsDeadlineExceeded(t *testing.T) {
@@ -104,31 +124,28 @@ func TestBotRunReturnsDeadlineExceeded(t *testing.T) {
 		updates: make(chan tgbotapi.Update),
 		stopped: make(chan struct{}),
 	}
-	bot := NewBot(source, func(context.Context, tgbotapi.Update) error { return nil })
+
+	bot := newTestBot(source, func(context.Context, tgbotapi.Update) error { return nil }, testConfig())
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 
 	err := bot.Run(ctx)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Run() error = %v, want it to wrap deadline exceeded", err)
-	}
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestBotRunDispatchesUpdates(t *testing.T) {
 	updates := make(chan tgbotapi.Update, 1)
 	updates <- tgbotapi.Update{UpdateID: 7, Message: &tgbotapi.Message{From: &tgbotapi.User{ID: 42}}}
 	close(updates)
+
 	source := &stubUpdateSource{updates: updates, stopped: make(chan struct{})}
 	handled := make(chan int, 1)
-	bot := NewBot(source, func(_ context.Context, upd tgbotapi.Update) error {
+
+	bot := newTestBot(source, func(_ context.Context, upd tgbotapi.Update) error {
 		handled <- upd.UpdateID
 		return nil
-	})
+	}, testConfig())
 
-	if err := bot.Run(context.Background()); err != nil {
-		t.Fatalf("Run() returned an unexpected error: %v", err)
-	}
-	if got := <-handled; got != 7 {
-		t.Fatalf("handled update ID = %d, want 7", got)
-	}
+	require.NoError(t, bot.Run(context.Background()))
+	require.Equal(t, 7, <-handled)
 }

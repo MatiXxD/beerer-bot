@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/viper"
 
+	"github.com/MatiXxD/beerer-bot/internal/pkg/telegram"
 	"github.com/MatiXxD/beerer-bot/pkg/logger"
 )
 
@@ -18,8 +19,8 @@ type AppConfig struct {
 
 // TelegramBotConfig config represents the configuration of the Telegram bot.
 type TelegramBotConfig struct {
-	BotToken    string `mapstructure:"bot_token"`
-	LongPolling bool   `mapstructure:"long_polling"`
+	BotToken string          `mapstructure:"bot_token"`
+	Bot      telegram.Config `mapstructure:"bot"`
 }
 
 // Config structs that contain all configuration for the application.

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/stretchr/testify/require"
 )
 
 type telegramAPIClient struct {
@@ -52,9 +53,7 @@ func (c *telegramAPIClient) Do(r *http.Request) (*http.Response, error) {
 func (c *telegramAPIClient) bot(t *testing.T) *tgbotapi.BotAPI {
 	t.Helper()
 	bot, err := tgbotapi.NewBotAPIWithClient("test", "http://telegram.test/bot%s/%s", c)
-	if err != nil {
-		t.Fatalf("NewBotAPIWithAPIEndpoint() error: %v", err)
-	}
+	require.NoError(t, err)
 	return bot
 }
 
@@ -70,62 +69,51 @@ func (c *telegramAPIClient) request(method string) (url.Values, bool) {
 }
 
 func TestNewLongPollingUsesDefaults(t *testing.T) {
+	cfg := testConfig()
 	api := &telegramAPIClient{}
-	lp := NewLongPolling(api.bot(t))
+	lp := NewLongPolling(api.bot(t), cfg.LongPolling)
 
-	if lp.timeout != defaultLongPollingTimeout {
-		t.Fatalf("timeout = %d, want %d", lp.timeout, defaultLongPollingTimeout)
-	}
+	require.Equal(t, cfg.LongPolling, lp.cfg)
 }
 
 func TestLongPollingUpdatesAndStop(t *testing.T) {
+	cfg := testConfig()
 	api := &telegramAPIClient{}
-	lp := NewLongPolling(api.bot(t))
+	lp := NewLongPolling(api.bot(t), cfg.LongPolling)
 
 	updates, err := lp.Updates()
-	if err != nil {
-		t.Fatalf("Updates() error: %v", err)
-	}
-	if _, ok := api.request("deleteWebhook"); !ok {
-		t.Fatal("Updates() did not delete the webhook")
-	}
+	require.NoError(t, err)
+	require.NotNil(t, updates)
+	_, ok := api.request("deleteWebhook")
+	require.True(t, ok, "Updates() did not delete the webhook")
 
 	deadline := time.Now().Add(time.Second)
 	for {
 		if form, ok := api.request("getUpdates"); ok {
-			if got := form.Get("timeout"); got != "10" {
-				t.Fatalf("getUpdates timeout = %q, want %q", got, "10")
-			}
+			require.Equal(t, "17", form.Get("timeout"))
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("GetUpdatesChan did not request updates")
+			require.FailNow(t, "GetUpdatesChan did not request updates")
 		}
 		time.Sleep(time.Millisecond)
 	}
 
-	if err := lp.Stop(); err != nil {
-		t.Fatalf("Stop() error: %v", err)
-	}
+	require.NoError(t, lp.Stop())
 	select {
 	case _, ok := <-updates:
-		if ok {
-			t.Fatal("updates channel remained open after Stop()")
-		}
+		require.False(t, ok, "updates channel remained open after Stop()")
 	case <-time.After(time.Second):
-		t.Fatal("updates channel was not closed after Stop()")
+		require.FailNow(t, "updates channel was not closed after Stop()")
 	}
 }
 
 func TestLongPollingReturnsDeleteWebhookError(t *testing.T) {
+	cfg := testConfig()
 	api := &telegramAPIClient{failDeleteWebhook: true}
-	lp := NewLongPolling(api.bot(t))
+	lp := NewLongPolling(api.bot(t), cfg.LongPolling)
 
 	updates, err := lp.Updates()
-	if err == nil {
-		t.Fatal("Updates() returned nil error")
-	}
-	if updates != nil {
-		t.Fatal("Updates() returned a channel after deleteWebhook failed")
-	}
+	require.Error(t, err)
+	require.Nil(t, updates)
 }

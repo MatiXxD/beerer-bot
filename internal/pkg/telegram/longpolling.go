@@ -9,15 +9,15 @@ import (
 // LongPolling is a struct that represents the long polling mechanism for receiving
 // updates from the Telegram Bot API.
 type LongPolling struct {
-	api     *tgbotapi.BotAPI
-	timeout int
+	api *tgbotapi.BotAPI
+	cfg LongPollingConfig
 }
 
 // NewLongPolling creates a new LongPolling instance.
-func NewLongPolling(api *tgbotapi.BotAPI) *LongPolling {
+func NewLongPolling(api *tgbotapi.BotAPI, cfg LongPollingConfig) *LongPolling {
 	return &LongPolling{
-		api:     api,
-		timeout: defaultLongPollingTimeout,
+		api: api,
+		cfg: cfg,
 	}
 }
 
@@ -30,10 +30,10 @@ func (lp *LongPolling) Updates() (<-chan tgbotapi.Update, error) {
 		return nil, op.WithErr(err)
 	}
 
-	cfg := tgbotapi.NewUpdate(0)
-	cfg.Timeout = lp.timeout
+	updateCfg := tgbotapi.NewUpdate(0)
+	updateCfg.Timeout = lp.cfg.Timeout
 
-	return lp.api.GetUpdatesChan(cfg), nil
+	return lp.api.GetUpdatesChan(updateCfg), nil
 }
 
 // Stop stops the long polling mechanism.

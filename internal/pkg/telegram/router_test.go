@@ -2,11 +2,11 @@ package telegram
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 
 	"github.com/MatiXxD/beerer-bot/pkg/utils"
 )
@@ -35,12 +35,8 @@ func TestRouterRoutesUpdates(t *testing.T) {
 			router.RegisterCallback("beer:order", handler("specific"))
 			router.RegisterCallback("beer", handler("general"))
 
-			if err := router.Handle(context.Background(), tt.upd); err != nil {
-				t.Fatalf("Handle() returned an unexpected error: %v", err)
-			}
-			if called != tt.want {
-				t.Fatalf("called handler = %q, want %q", called, tt.want)
-			}
+			require.NoError(t, router.Handle(context.Background(), tt.upd))
+			require.Equal(t, tt.want, called)
 		})
 	}
 }
@@ -50,16 +46,19 @@ func TestRouterUsesFallback(t *testing.T) {
 	ctx := utils.SetZeroLogger(context.Background(), &logger)
 	router := NewRouter()
 
-	updates := []tgbotapi.Update{
-		{Message: &tgbotapi.Message{Text: "/unknown", Entities: []tgbotapi.MessageEntity{{Type: "bot_command", Offset: 0, Length: 8}}}},
-		{Message: &tgbotapi.Message{}},
-		{CallbackQuery: &tgbotapi.CallbackQuery{Data: "unknown"}},
-		{},
+	tests := []struct {
+		name string
+		upd  tgbotapi.Update
+	}{
+		{name: "unknown command", upd: tgbotapi.Update{Message: &tgbotapi.Message{Text: "/unknown", Entities: []tgbotapi.MessageEntity{{Type: "bot_command", Offset: 0, Length: 8}}}}},
+		{name: "empty message", upd: tgbotapi.Update{Message: &tgbotapi.Message{}}},
+		{name: "unknown callback", upd: tgbotapi.Update{CallbackQuery: &tgbotapi.CallbackQuery{Data: "unknown"}}},
+		{name: "empty update", upd: tgbotapi.Update{}},
 	}
-	for _, upd := range updates {
-		if err := router.Handle(ctx, upd); err != nil {
-			t.Fatalf("Handle() returned an unexpected error: %v", err)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NoError(t, router.Handle(ctx, tt.upd))
+		})
 	}
 }
 
@@ -83,11 +82,7 @@ func TestRouterAppliesMiddlewareInRegistrationOrder(t *testing.T) {
 		return nil
 	})
 
-	if err := router.Handle(context.Background(), tgbotapi.Update{Message: &tgbotapi.Message{Text: "hello"}}); err != nil {
-		t.Fatalf("Handle() returned an unexpected error: %v", err)
-	}
+	require.NoError(t, router.Handle(context.Background(), tgbotapi.Update{Message: &tgbotapi.Message{Text: "hello"}}))
 	want := []string{"first:before", "second:before", "handler", "second:after", "first:after"}
-	if !reflect.DeepEqual(calls, want) {
-		t.Fatalf("call order = %v, want %v", calls, want)
-	}
+	require.Equal(t, want, calls)
 }

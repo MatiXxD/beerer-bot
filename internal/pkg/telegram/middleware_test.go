@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 
 	"github.com/MatiXxD/beerer-bot/pkg/utils"
 )
@@ -19,18 +19,16 @@ func TestRecovery(t *testing.T) {
 	})
 
 	err := handler(context.Background(), tgbotapi.Update{})
-	if err == nil || !strings.Contains(err.Error(), "panic: boom") || !strings.Contains(err.Error(), "goroutine") {
-		t.Fatalf("Recovery() error = %v, want panic value and stack", err)
-	}
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "panic: boom")
+	require.Contains(t, err.Error(), "goroutine")
 }
 
 func TestRecoveryPassesThroughResult(t *testing.T) {
 	wantErr := errors.New("handler failed")
 	handler := Recovery()(func(context.Context, tgbotapi.Update) error { return wantErr })
 
-	if err := handler(context.Background(), tgbotapi.Update{}); !errors.Is(err, wantErr) {
-		t.Fatalf("Recovery() error = %v, want %v", err, wantErr)
-	}
+	require.ErrorIs(t, handler(context.Background(), tgbotapi.Update{}), wantErr)
 }
 
 func TestLoggingHandlesCallbackQuery(t *testing.T) {
@@ -48,12 +46,8 @@ func TestLoggingHandlesCallbackQuery(t *testing.T) {
 		},
 	}
 
-	if err := handler(ctx, upd); err != nil {
-		t.Fatalf("handler returned an unexpected error: %v", err)
-	}
-	if !called {
-		t.Fatal("next handler was not called")
-	}
+	require.NoError(t, handler(ctx, upd))
+	require.True(t, called, "next handler was not called")
 }
 
 func TestLoggingUpdateKinds(t *testing.T) {
@@ -76,12 +70,8 @@ func TestLoggingUpdateKinds(t *testing.T) {
 			wantErr := errors.New("next result")
 			handler := Logging()(func(context.Context, tgbotapi.Update) error { return wantErr })
 
-			if err := handler(ctx, tt.upd); !errors.Is(err, wantErr) {
-				t.Fatalf("Logging() error = %v, want %v", err, wantErr)
-			}
-			if !strings.Contains(output.String(), tt.want) {
-				t.Fatalf("log = %q, want it to contain %q", output.String(), tt.want)
-			}
+			require.ErrorIs(t, handler(ctx, tt.upd), wantErr)
+			require.Contains(t, output.String(), tt.want)
 		})
 	}
 }

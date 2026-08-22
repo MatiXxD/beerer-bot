@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os/signal"
 	"syscall"
@@ -19,7 +18,6 @@ import (
 // DI represents the dependency injection container.
 type DI struct {
 	// Telegram
-	source telegram.UpdateSource
 	router *telegram.Router
 	bot    *telegram.Bot
 	api    *tgbotapi.BotAPI
@@ -89,15 +87,8 @@ func initBot(di *DI) error {
 		di.router.Use(mw)
 	}
 
-	// use long polling if specified in config, otherwise use webhook
-	if di.cfg.TelegramBot.LongPolling {
-		di.source = telegram.NewLongPolling(di.api)
-	} else {
-		return errors.New("webhook not supported yet")
-	}
-
 	// init bot
-	di.bot = telegram.NewBot(di.source, di.router.Handle)
+	di.bot = telegram.NewBot(di.router.Handle, di.api, di.cfg.TelegramBot.Bot)
 
 	return nil
 }

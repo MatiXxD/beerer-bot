@@ -19,15 +19,30 @@ type UpdateSource interface {
 type Bot struct {
 	source     UpdateSource
 	dispatcher *Dispatcher
+
+	cfg Config
 }
 
 // NewBot creates a new Bot instance.
-func NewBot(src UpdateSource, h Handler) *Bot {
-	// TODO: добавить конфиг, вместо того, чтобы повсюду брать дефолтные значения
-	return &Bot{
-		source:     src,
-		dispatcher: NewDispatcher(h),
+func NewBot(h Handler, api *tgbotapi.BotAPI, cfg Config) *Bot {
+	var bot Bot
+
+	cfg.Fix()
+	bot.cfg = cfg
+
+	// set dispatcher
+	bot.dispatcher = NewDispatcher(h, cfg.Dispatcher)
+
+	// use long polling if specified in config, otherwise use webhook
+	//nolint:gocritic
+	if cfg.LongPolling.Enabled {
+		bot.source = NewLongPolling(api, cfg.LongPolling)
+	} else {
+		// TODO: тут надо будет сделать поддержку webhook-а
+		bot.source = NewLongPolling(api, cfg.LongPolling)
 	}
+
+	return &bot
 }
 
 // Run runs the bot logic.
