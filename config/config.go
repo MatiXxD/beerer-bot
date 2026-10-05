@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MatiXxD/beerer-bot/pkg/sqlite"
 	"github.com/spf13/viper"
 
 	"github.com/MatiXxD/beerer-bot/internal/pkg/telegram"
 	"github.com/MatiXxD/beerer-bot/pkg/logger"
+	"github.com/MatiXxD/beerer-bot/pkg/sqlite"
 )
 
 // AppConfig config represents the configuration of the application.
