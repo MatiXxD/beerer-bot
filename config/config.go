@@ -7,7 +7,9 @@ import (
 
 	"github.com/spf13/viper"
 
+	"github.com/MatiXxD/beerer-bot/internal/pkg/telegram"
 	"github.com/MatiXxD/beerer-bot/pkg/logger"
+	"github.com/MatiXxD/beerer-bot/pkg/sqlite"
 )
 
 // AppConfig config represents the configuration of the application.
@@ -16,10 +18,18 @@ type AppConfig struct {
 	Version string `mapstructure:"version"`
 }
 
+// TelegramBotConfig config represents the configuration of the Telegram bot.
+type TelegramBotConfig struct {
+	BotToken string          `mapstructure:"bot_token"`
+	Bot      telegram.Config `mapstructure:"bot"`
+}
+
 // Config structs that contain all configuration for the application.
 type Config struct {
-	AppCfg AppConfig            `mapstructure:"app"`
-	Logger logger.ZerologConfig `mapstructure:"logger"`
+	AppCfg      AppConfig            `mapstructure:"app"`
+	TelegramBot TelegramBotConfig    `mapstructure:"telegram_bot"`
+	Sqlite      sqlite.Config        `mapstructure:"sqlite"`
+	Logger      logger.ZerologConfig `mapstructure:"logger"`
 }
 
 // Load loads the configuration.

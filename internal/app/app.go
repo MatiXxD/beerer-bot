@@ -2,18 +2,26 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os/signal"
 	"syscall"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/rs/zerolog"
 
 	"github.com/MatiXxD/beerer-bot/config"
+	"github.com/MatiXxD/beerer-bot/internal/pkg/telegram"
 	"github.com/MatiXxD/beerer-bot/pkg/logger"
 	"github.com/MatiXxD/beerer-bot/pkg/utils"
 )
 
 // DI represents the dependency injection container.
 type DI struct {
+	// Telegram
+	router *telegram.Router
+	bot    *telegram.Bot
+	api    *tgbotapi.BotAPI
+
 	// Common
 	cfg *config.Config
 	log *zerolog.Logger
@@ -21,7 +29,10 @@ type DI struct {
 
 // Run runs the application.
 func Run(ctx context.Context, cfg *config.Config) error {
-	var di DI
+	var (
+		di  DI
+		err error
+	)
 
 	// common
 	di.cfg = cfg
@@ -30,11 +41,54 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	// prepare global context
 	ctx = utils.SetZeroLogger(ctx, di.log)
 
-	_, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// just log for now
-	di.log.Info().Msgf("app %s is to be done", cfg.AppCfg.Name)
+	// prepare telegram bot
+	err = initBot(&di)
+	if err != nil {
+		return fmt.Errorf("failed to run the application: %w", err)
+	}
+
+	// domains
+	UserDomain(&di)
+
+	// start telegram bot
+	di.log.Info().Msg("starting bot...")
+
+	err = di.bot.Run(ctx)
+	if err != nil {
+		return fmt.Errorf("bot failed with: %w", err)
+	}
+
+	return nil
+}
+
+// initBot initialize all that is needed for the bot to work.
+func initBot(di *DI) error {
+	// TODO: не забыть накинуть конфиг на пакет с telegram ботом
+	var err error
+
+	// create telegram api
+	di.api, err = tgbotapi.NewBotAPI(di.cfg.TelegramBot.BotToken)
+	if err != nil {
+		return fmt.Errorf("failed to create telegram api: %w", err)
+	}
+
+	// create router
+	di.router = telegram.NewRouter()
+
+	mws := []telegram.Middleware{
+		telegram.Recovery(),
+		telegram.Logging(),
+	}
+
+	for _, mw := range mws {
+		di.router.Use(mw)
+	}
+
+	// init bot
+	di.bot = telegram.NewBot(di.router.Handle, di.api, di.cfg.TelegramBot.Bot)
 
 	return nil
 }
