@@ -70,6 +70,9 @@ func buildDSN(path string, cfg Config) string {
 	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", cfg.BusyTimeout.Milliseconds()))
 	query.Add("_pragma", fmt.Sprintf("journal_mode(%s)", cfg.JournalMode))
 
+	// take the write lock at BEGIN of transactions
+	query.Add("_txlock", "immediate")
+
 	return fmt.Sprintf("file:%s?%s", path, query.Encode())
 }
 

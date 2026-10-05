@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	modernsqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 func TestConfigFix(t *testing.T) {
@@ -18,10 +19,62 @@ func TestConfigFix(t *testing.T) {
 		cfg  Config
 		want Config
 	}{
-		{name: "defaults", cfg: Config{MaxIdleConns: -1}, want: Config{Path: defaultPath, BusyTimeout: defaultBusyTimeout, JournalMode: defaultJournalMode, MaxOpenConns: defaultMaxOpenConns, MaxIdleConns: defaultMaxOpenConns}},
-		{name: "configured values", cfg: Config{Path: "custom.db", BusyTimeout: time.Second, JournalMode: "DELETE", MaxOpenConns: 2, MaxIdleConns: 1}, want: Config{Path: "custom.db", BusyTimeout: time.Second, JournalMode: "delete", MaxOpenConns: 2, MaxIdleConns: 1}},
-		{name: "idle conns follow open conns", cfg: Config{MaxOpenConns: 4}, want: Config{Path: defaultPath, BusyTimeout: defaultBusyTimeout, JournalMode: defaultJournalMode, MaxOpenConns: 4, MaxIdleConns: 4}},
-		{name: "in-memory keeps single connection", cfg: Config{Path: inMemoryPath, MaxOpenConns: 4, MaxIdleConns: 2}, want: Config{Path: inMemoryPath, BusyTimeout: defaultBusyTimeout, JournalMode: defaultJournalMode, MaxOpenConns: 1, MaxIdleConns: 1}},
+		{
+			name: "defaults",
+			cfg:  Config{MaxIdleConns: -1},
+			want: Config{
+				Path:         defaultPath,
+				BusyTimeout:  defaultBusyTimeout,
+				JournalMode:  defaultJournalMode,
+				MaxOpenConns: defaultMaxOpenConns,
+				MaxIdleConns: defaultMaxOpenConns,
+			},
+		},
+		{
+			name: "configured values",
+			cfg: Config{
+				Path:         "custom.db",
+				BusyTimeout:  time.Second,
+				JournalMode:  "DELETE",
+				MaxOpenConns: 2,
+				MaxIdleConns: 1,
+			},
+			want: Config{
+				Path:         "custom.db",
+				BusyTimeout:  time.Second,
+				JournalMode:  "delete",
+				MaxOpenConns: 2,
+				MaxIdleConns: 1,
+			},
+		},
+		{
+			name: "idle conns follow open conns",
+			cfg: Config{
+				MaxOpenConns: 4,
+			},
+			want: Config{
+				Path:         defaultPath,
+				BusyTimeout:  defaultBusyTimeout,
+				JournalMode:  defaultJournalMode,
+				MaxOpenConns: 4,
+				MaxIdleConns: 4,
+			},
+		},
+		{
+			name: "in-memory keeps single connection",
+			cfg: Config{
+				Path:         inMemoryPath,
+				MaxOpenConns: 4,
+				MaxIdleConns: 2,
+			},
+			want: Config{
+				Path:         inMemoryPath,
+				BusyTimeout:  defaultBusyTimeout,
+				JournalMode:  defaultJournalMode,
+				MaxOpenConns: 1,
+				MaxIdleConns: 1,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -47,10 +100,14 @@ func TestConfigValidate(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	ctx := t.Context()
-	dir := filepath.Join(t.TempDir(), "nested")
+	var (
+		ctx = t.Context()
+		dir = filepath.Join(t.TempDir(), "nested")
+	)
+
 	storage, err := New(ctx, Config{Path: filepath.Join(dir, "beerer.db"), BusyTimeout: 3 * time.Second})
 	require.NoError(t, err)
+
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	info, err := os.Stat(dir)
@@ -59,6 +116,7 @@ func TestNew(t *testing.T) {
 
 	_, err = storage.DB.ExecContext(ctx, `CREATE TABLE parent (id INTEGER PRIMARY KEY); CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent(id));`)
 	require.NoError(t, err)
+
 	_, err = storage.DB.ExecContext(ctx, "INSERT INTO child(id, parent_id) VALUES (?, ?)", 1, 404)
 	require.Error(t, err, "foreign_keys pragma must be enabled")
 
@@ -82,14 +140,17 @@ func TestNewInvalidJournalMode(t *testing.T) {
 
 func TestNewInMemory(t *testing.T) {
 	ctx := t.Context()
+
 	storage, err := New(ctx, Config{Path: inMemoryPath, JournalMode: "MEMORY", MaxOpenConns: 4})
 	require.NoError(t, err)
+
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	require.Equal(t, 1, storage.DB.Stats().MaxOpenConnections)
 
 	_, err = storage.DB.ExecContext(ctx, "CREATE TABLE test (id INTEGER PRIMARY KEY)")
 	require.NoError(t, err)
+
 	_, err = storage.DB.ExecContext(ctx, "INSERT INTO test(id) VALUES (?)", 1)
 	require.NoError(t, err)
 
@@ -98,19 +159,59 @@ func TestNewInMemory(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+func TestTxLock(t *testing.T) {
+	ctx := t.Context()
+
+	storage, err := New(ctx, Config{Path: filepath.Join(t.TempDir(), "txlock.db"), BusyTimeout: 100 * time.Millisecond, MaxOpenConns: 2})
+	require.NoError(t, err)
+
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	_, err = storage.DB.ExecContext(ctx, "CREATE TABLE test (id INTEGER PRIMARY KEY)")
+	require.NoError(t, err)
+
+	t.Run("write transaction takes write lock at begin", func(t *testing.T) {
+		tx, err := storage.DB.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, tx.Rollback()) }()
+
+		_, err = storage.DB.ExecContext(ctx, "INSERT INTO test(id) VALUES (?)", 1)
+
+		var sqliteErr *modernsqlite.Error
+		require.ErrorAs(t, err, &sqliteErr)
+		require.Equal(t, sqlite3.SQLITE_BUSY, sqliteErr.Code()&0xff)
+	})
+
+	t.Run("read-only transaction stays deferred", func(t *testing.T) {
+		tx, err := storage.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		require.NoError(t, err)
+		defer func() { require.NoError(t, tx.Rollback()) }()
+
+		_, err = storage.DB.ExecContext(ctx, "INSERT INTO test(id) VALUES (?)", 2)
+		require.NoError(t, err)
+	})
+}
+
 func TestParseError(t *testing.T) {
 	ctx := t.Context()
+
 	storage, err := New(ctx, Config{Path: filepath.Join(t.TempDir(), "errors.db")})
 	require.NoError(t, err)
+
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
 	_, err = storage.DB.ExecContext(ctx, "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL)")
 	require.NoError(t, err)
+
 	_, err = storage.DB.ExecContext(ctx, "INSERT INTO users(id, name) VALUES (?, ?)", 1, "alice")
 	require.NoError(t, err)
+
 	_, uniqueErr := storage.DB.ExecContext(ctx, "INSERT INTO users(id, name) VALUES (?, ?)", 2, "alice")
 	require.Error(t, uniqueErr)
+
 	_, primaryKeyErr := storage.DB.ExecContext(ctx, "INSERT INTO users(id, name) VALUES (?, ?)", 1, "bob")
 	require.Error(t, primaryKeyErr)
+
 	unknownErr := errors.New("boom")
 
 	tests := []struct {
@@ -121,19 +222,14 @@ func TestParseError(t *testing.T) {
 		{name: "not found", err: sql.ErrNoRows, want: ErrNotFound},
 		{name: "unique constraint", err: uniqueErr, want: ErrAlreadyExists},
 		{name: "primary key constraint", err: primaryKeyErr, want: ErrAlreadyExists},
-		{name: "unknown", err: unknownErr},
+		{name: "unknown", err: unknownErr, want: unknownErr},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ParseError(tt.err)
 			require.ErrorIs(t, got, tt.err, "original error must stay in the chain")
-			if tt.want != nil {
-				require.ErrorIs(t, got, tt.want)
-			} else {
-				require.NotErrorIs(t, got, ErrNotFound)
-				require.NotErrorIs(t, got, ErrAlreadyExists)
-			}
+			require.ErrorIs(t, got, tt.want)
 		})
 	}
 
