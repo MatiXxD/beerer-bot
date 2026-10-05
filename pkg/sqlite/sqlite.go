@@ -7,23 +7,29 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+
+	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
 )
 
-// SQLite is a wrapper around database/sql.
+// SQLite is a wrapper around database/sql for SQLite database.
 type SQLite struct {
 	DB *sql.DB
 }
 
-// New opens SQLite, applies connection settings and verifies the connection.
+// New opens SQLite, applies connection settings, and verifies the connection.
 func New(ctx context.Context, cfg Config) (*SQLite, error) {
 	cfg.Fix()
 
-	dsn, err := buildDSN(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("build sqlite DSN: %w", err)
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid sqlite config: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", dsn)
+	path, err := preparePath(cfg.Path)
+	if err != nil {
+		return nil, fmt.Errorf("prepare sqlite path: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", buildDSN(path, cfg))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
@@ -39,28 +45,32 @@ func New(ctx context.Context, cfg Config) (*SQLite, error) {
 	return &SQLite{DB: db}, nil
 }
 
-// buildDSN constructs a SQLite DSN from the given configuration.
-func buildDSN(cfg Config) (string, error) {
-	path := cfg.Path
-	if path != ":memory:" {
-		absolutePath, err := filepath.Abs(path)
-		if err != nil {
-			return "", fmt.Errorf("resolve database path: %w", err)
-		}
-
-		if err = os.MkdirAll(filepath.Dir(absolutePath), 0o755); err != nil {
-			return "", fmt.Errorf("failed to create directory: %w", err)
-		}
-
-		path = filepath.ToSlash(absolutePath)
+// preparePath resolves the database path and creates its parent directory.
+func preparePath(path string) (string, error) {
+	if path == inMemoryPath {
+		return path, nil
 	}
 
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve database path: %w", err)
+	}
+
+	if err = os.MkdirAll(filepath.Dir(absolutePath), 0o750); err != nil {
+		return "", fmt.Errorf("failed to create database directory: %w", err)
+	}
+
+	return filepath.ToSlash(absolutePath), nil // replace '\' with '/' to support windows
+}
+
+// buildDSN constructs a SQLite DSN from the prepared path and configuration.
+func buildDSN(path string, cfg Config) string {
 	query := make(url.Values)
 	query.Add("_pragma", "foreign_keys(1)")
-	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", cfg.BusyTimeout.Microseconds()))
+	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", cfg.BusyTimeout.Milliseconds()))
 	query.Add("_pragma", fmt.Sprintf("journal_mode(%s)", cfg.JournalMode))
 
-	return fmt.Sprintf("file:%s?%s", path, query.Encode()), nil
+	return fmt.Sprintf("file:%s?%s", path, query.Encode())
 }
 
 // Close closes the underlying connection pool.

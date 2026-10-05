@@ -15,22 +15,23 @@ var (
 )
 
 // ParseError converts driver-specific errors into errors shared by repositories.
-func ParseError(err error) (error, bool) {
+// The original error stays in the chain, so callers can match both.
+func ParseError(err error) error {
 	if err == nil {
-		return nil, false
+		return nil
 	}
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound, true
+		return fmt.Errorf("%w: %w", ErrNotFound, err)
 	}
 
 	var sqliteErr *modernsqlite.Error
 	if errors.As(err, &sqliteErr) {
 		switch sqliteErr.Code() {
 		case sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY, sqlite3.SQLITE_CONSTRAINT_UNIQUE:
-			return ErrAlreadyExists, true
+			return fmt.Errorf("%w: %w", ErrAlreadyExists, err)
 		}
 	}
 
-	return fmt.Errorf("sqlite error: %w", err), false
+	return fmt.Errorf("sqlite error: %w", err)
 }

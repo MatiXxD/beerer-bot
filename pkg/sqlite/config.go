@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -10,8 +11,19 @@ const (
 	defaultBusyTimeout  = 5 * time.Second
 	defaultJournalMode  = "wal"
 	defaultMaxOpenConns = 1
-	defaultMaxIdleConns = 1
+
+	inMemoryPath = ":memory:"
 )
+
+// journalModes contains journal modes supported by SQLite.
+var journalModes = map[string]struct{}{
+	"delete":   {},
+	"truncate": {},
+	"persist":  {},
+	"memory":   {},
+	"wal":      {},
+	"off":      {},
+}
 
 // Config contains SQLite connection settings.
 type Config struct {
@@ -42,6 +54,22 @@ func (cfg *Config) Fix() {
 	}
 
 	if cfg.MaxIdleConns <= 0 {
-		cfg.MaxIdleConns = defaultMaxIdleConns
+		cfg.MaxIdleConns = cfg.MaxOpenConns
 	}
+
+	// every connection to :memory: gets its own empty database,
+	// so the pool must keep exactly one connection alive
+	if cfg.Path == inMemoryPath {
+		cfg.MaxOpenConns = 1
+		cfg.MaxIdleConns = 1
+	}
+}
+
+// Validate checks settings that can't be fixed with defaults.
+func (cfg *Config) Validate() error {
+	if _, ok := journalModes[cfg.JournalMode]; !ok {
+		return fmt.Errorf("unsupported journal mode %q", cfg.JournalMode)
+	}
+
+	return nil
 }
