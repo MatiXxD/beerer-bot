@@ -31,5 +31,12 @@ go.work.sum
 .idea/
 .vscode/
 
-# Folder for compiled binaries
+# Build
 bin/
+vendor/
+
+# Secrets
+config/config-prod.yaml
+
+# SQLite files
+data/
