@@ -66,7 +66,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 // initBot initialize all that is needed for the bot to work.
 func initBot(di *DI) error {
-	// TODO: не забыть накинуть конфиг на пакет с telegram ботом
 	var err error
 
 	// create telegram api
@@ -88,7 +87,10 @@ func initBot(di *DI) error {
 	}
 
 	// init bot
-	di.bot = telegram.NewBot(di.router.Handle, di.api, di.cfg.TelegramBot.Bot)
+	di.bot, err = telegram.NewBot(di.router.Build(), di.api, di.cfg.TelegramBot.Bot)
+	if err != nil {
+		return fmt.Errorf("failed to create telegram bot: %w", err)
+	}
 
 	return nil
 }

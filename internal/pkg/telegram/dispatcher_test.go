@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -102,29 +103,42 @@ func TestDispatcherProcessesDifferentUsersConcurrently(t *testing.T) {
 func TestDispatcherStopDrainsQueue(t *testing.T) {
 	const updateCount = 20
 	var (
-		mu      sync.Mutex
-		handled int
+		handled atomic.Int32
+		started = make(chan struct{})
+		release = make(chan struct{})
+		once    sync.Once
 		cfg     = testConfig()
 	)
 	cfg.Dispatcher.QueueSize = updateCount
 
 	dispatcher := NewDispatcher(func(context.Context, tgbotapi.Update) error {
-		mu.Lock()
-		handled++
-		mu.Unlock()
+		once.Do(func() {
+			close(started)
+			<-release
+		})
+		handled.Add(1)
 		return nil
 	}, cfg.Dispatcher)
 
 	for i := range updateCount {
 		dispatcher.Dispatch(testContext(), tgbotapi.Update{
 			UpdateID: i,
-			Message:  &tgbotapi.Message{From: &tgbotapi.User{ID: 42}},
+			Message:  &tgbotapi.Message{From: &tgbotapi.User{ID: 52}},
 		})
 	}
+	<-started
 
-	dispatcher.Stop()
+	stopped := make(chan struct{})
+	go func() {
+		dispatcher.Stop()
+		close(stopped)
+	}()
 
-	require.Equal(t, updateCount, handled)
+	<-dispatcher.done
+	close(release)
+	<-stopped
+
+	require.Equal(t, int32(updateCount), handled.Load())
 }
 
 func TestDispatcherDropsUpdateWhenUserQueueIsFull(t *testing.T) {
@@ -149,10 +163,11 @@ func TestDispatcherDropsUpdateWhenUserQueueIsFull(t *testing.T) {
 	}, cfg.Dispatcher)
 
 	update := tgbotapi.Update{Message: &tgbotapi.Message{From: &tgbotapi.User{ID: 42}}}
-	dispatcher.Dispatch(ctx, update)
+	dispatcher.Dispatch(ctx, update) // handled == 1
 
+	// handled should be 1 + cfg.Dispatcher.QueueSize after this loop, 10 will be dropped
 	<-started
-	for range cfg.Dispatcher.QueueSize + 1 {
+	for range cfg.Dispatcher.QueueSize + 10 {
 		dispatcher.Dispatch(ctx, update)
 	}
 
@@ -180,7 +195,12 @@ func TestDispatcherLogsHandlerError(t *testing.T) {
 	require.Contains(t, output.String(), wantErr.Error())
 }
 
-func TestDispatcherPreservesContextValuesDuringShutdown(t *testing.T) {
+func TestDispatcherHandlerIgnoresParentCancel(t *testing.T) {
+	type handlerCtx struct {
+		logger *zerolog.Logger
+		err    error
+	}
+
 	var (
 		cfg = testConfig()
 
@@ -188,21 +208,16 @@ func TestDispatcherPreservesContextValuesDuringShutdown(t *testing.T) {
 		ctx             = utils.SetZeroLogger(context.Background(), &logger)
 		handlerStarted  = make(chan struct{})
 		continueHandler = make(chan struct{})
-		result          = make(chan error, 1)
+		result          = make(chan handlerCtx, 1)
 	)
 
 	ctx, cancel := context.WithCancel(ctx)
 
-	dispatcher := NewDispatcher(func(ctx context.Context, _ tgbotapi.Update) error {
+	dispatcher := NewDispatcher(func(hctx context.Context, _ tgbotapi.Update) error {
 		close(handlerStarted)
 		<-continueHandler
 
-		if got := utils.GetZeroLogger(ctx); got != &logger {
-			result <- context.Canceled
-			return nil
-		}
-
-		result <- ctx.Err()
+		result <- handlerCtx{logger: utils.GetZeroLogger(hctx), err: hctx.Err()}
 		return nil
 	}, cfg.Dispatcher)
 
@@ -220,5 +235,7 @@ func TestDispatcherPreservesContextValuesDuringShutdown(t *testing.T) {
 	close(continueHandler)
 	dispatcher.Stop()
 
-	require.NoError(t, <-result, "handler context was canceled or lost its logger")
+	got := <-result
+	require.Same(t, &logger, got.logger, "handler context lost its logger")
+	require.NoError(t, got.err, "handler context was canceled")
 }

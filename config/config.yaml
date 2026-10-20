@@ -4,7 +4,9 @@ app:
 
 telegram_bot:
   bot_token: "your_tg_bot_token"
-  long_polling: true
+  bot:
+    long_polling:
+      enabled: true
 
 sqlite:
   path: "data/beerer.db"

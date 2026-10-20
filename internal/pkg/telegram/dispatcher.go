@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -21,6 +22,9 @@ type Dispatcher struct {
 
 	cfg    DispatcherConfig
 	queues map[int64]chan tgbotapi.Update
+
+	stopped  bool
+	stopOnce sync.Once
 }
 
 // NewDispatcher creates a new dispatcher.
@@ -45,7 +49,13 @@ func (d *Dispatcher) Dispatch(ctx context.Context, upd tgbotapi.Update) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// create queue for the user if it doesn't exist'
+	// do not add new updates if the dispatcher was stopped
+	if d.stopped {
+		log.Info().Msgf("dropping update from user %d because the dispatcher was stopped", from.ID)
+		return
+	}
+
+	// create queue for the user if it doesn't exist
 	q, ok := d.queues[from.ID]
 	if !ok {
 		q = make(chan tgbotapi.Update, d.cfg.QueueSize)
@@ -62,14 +72,20 @@ func (d *Dispatcher) Dispatch(ctx context.Context, upd tgbotapi.Update) {
 	case q <- upd:
 	default:
 		log.Warn().
-			Str(logger.TagUnexpected, "queue for the user if full, dropping update").
+			Str(logger.TagUnexpected, "queue for the user is full, dropping update").
 			Msgf("queue for user %d is full", from.ID)
 	}
 }
 
 // Stop stops the dispatcher.
 func (d *Dispatcher) Stop() {
-	close(d.done)
+	d.stopOnce.Do(func() {
+		d.mu.Lock()
+		d.stopped = true
+		d.mu.Unlock()
+		close(d.done)
+	})
+
 	d.wg.Wait()
 }
 
@@ -88,11 +104,6 @@ func (d *Dispatcher) worker(
 		select {
 		case upd := <-q:
 			d.handle(ctx, upd)
-
-			if !idle.Stop() {
-				<-idle.C
-			}
-
 			idle.Reset(d.cfg.WorkerIdleTTL)
 		case <-d.done:
 			// handle all user's updates before return
@@ -128,6 +139,13 @@ func (d *Dispatcher) handle(ctx context.Context, upd tgbotapi.Update) {
 	const op = utils.Operation("Dispatcher.handle")
 
 	log := utils.GetZeroLogger(ctx)
+
+	// just in case, mw will handle panic
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().Msgf("panic: %s: %v\n%s", op, r, debug.Stack())
+		}
+	}()
 
 	ctx, cancel := context.WithTimeout(ctx, d.cfg.HandleTimeout)
 	defer cancel()

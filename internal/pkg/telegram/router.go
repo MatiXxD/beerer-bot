@@ -37,9 +37,23 @@ type Router struct {
 // NewRouter creates a new Telegram router.
 func NewRouter() *Router {
 	return &Router{
-		commands: make(map[string]Handler),
-		fallback: fallbackHandler,
+		commands:  make(map[string]Handler),
+		callbacks: []callback{},
+		text:      defaultTextHandler,
+		fallback:  defaultFallbackHandler,
 	}
+}
+
+// WithFallback sets the fallback handler.
+func (r *Router) WithFallback(h Handler) *Router {
+	r.fallback = h
+	return r
+}
+
+// WithText sets the text handler.
+func (r *Router) WithText(h Handler) *Router {
+	r.text = h
+	return r
 }
 
 // Use adds middleware to the router.
@@ -49,31 +63,53 @@ func (r *Router) Use(m Middleware) {
 
 // RegisterCommand registers a command handler for the given command name.
 func (r *Router) RegisterCommand(name string, h Handler) {
+	if h == nil {
+		panic("telegram: nil handler for command " + name)
+	}
+
 	r.commands[name] = h
 }
 
 // RegisterCallback registers a callback handler for the given callback prefix
 // more specific callbacks should be registered first.
 func (r *Router) RegisterCallback(prefix string, h Handler) {
+	if h == nil {
+		panic("telegram: nil handler for callback prefix " + prefix)
+	}
+
 	r.callbacks = append(r.callbacks, callback{prefix: prefix, handler: h})
 }
 
 // RegisterText registers a text handler for the given text.
 func (r *Router) RegisterText(h Handler) {
+	if h == nil {
+		panic("telegram: nil text handler")
+	}
+
 	r.text = h
 }
 
-// Handle represents the main handler for Telegram updates.
-func (r *Router) Handle(ctx context.Context, upd tgbotapi.Update) error {
-	// select right handler, fallback handler if not found
-	h := r.resolveHandler(upd)
-
-	// apply middlewares
-	for i := range slices.Backward(r.middlewares) {
-		h = r.middlewares[i](h)
+// RegisterFallback registers the fallback handler.
+func (r *Router) RegisterFallback(h Handler) {
+	if h == nil {
+		panic("telegram: nil fallback handler")
 	}
 
-	return h(ctx, upd)
+	r.fallback = h
+}
+
+// Build builds the main handler for Telegram updates with all middlewares applied.
+// Middlewares added after Build are not applied, but handlers can still be registered.
+func (r *Router) Build() Handler {
+	h := Handler(func(ctx context.Context, upd tgbotapi.Update) error {
+		return r.resolveHandler(upd)(ctx, upd)
+	})
+
+	for _, m := range slices.Backward(r.middlewares) {
+		h = m(h)
+	}
+
+	return h
 }
 
 // resolveHandler resolves the handler for the given update.
@@ -96,15 +132,25 @@ func (r *Router) resolveHandler(upd tgbotapi.Update) Handler {
 		}
 	}
 
-	return fallbackHandler
+	return r.fallback
 }
 
-// fallbackHandler represents a fallback handler, which will be used when no other handler is found.
-func fallbackHandler(ctx context.Context, _ tgbotapi.Update) error {
+// defaultFallbackHandler represents a default fallback handler, which will be used by default in NewRouter.
+func defaultFallbackHandler(ctx context.Context, _ tgbotapi.Update) error {
 	log := utils.GetZeroLogger(ctx)
 	log.Warn().
 		Str(logger.TagUnexpected, "handler was not found -> using fallback").
 		Msg("fallback handler was called")
+
+	return nil
+}
+
+// defaultTextHandler represents a default text handler, which will be used by default in NewRouter.
+func defaultTextHandler(ctx context.Context, upd tgbotapi.Update) error {
+	log := utils.GetZeroLogger(ctx)
+	log.Warn().
+		Str(logger.TagUnexpected, "text handler was not found").
+		Msgf("using the default text handler: msg=%s", upd.Message.Text)
 
 	return nil
 }

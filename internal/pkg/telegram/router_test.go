@@ -35,7 +35,7 @@ func TestRouterRoutesUpdates(t *testing.T) {
 			router.RegisterCallback("beer:order", handler("specific"))
 			router.RegisterCallback("beer", handler("general"))
 
-			require.NoError(t, router.Handle(context.Background(), tt.upd))
+			require.NoError(t, router.Build()(context.Background(), tt.upd))
 			require.Equal(t, tt.want, called)
 		})
 	}
@@ -57,7 +57,7 @@ func TestRouterUsesFallback(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.NoError(t, router.Handle(ctx, tt.upd))
+			require.NoError(t, router.Build()(ctx, tt.upd))
 		})
 	}
 }
@@ -82,7 +82,61 @@ func TestRouterAppliesMiddlewareInRegistrationOrder(t *testing.T) {
 		return nil
 	})
 
-	require.NoError(t, router.Handle(context.Background(), tgbotapi.Update{Message: &tgbotapi.Message{Text: "hello"}}))
+	require.NoError(t, router.Build()(context.Background(), tgbotapi.Update{Message: &tgbotapi.Message{Text: "hello"}}))
 	want := []string{"first:before", "second:before", "handler", "second:after", "first:after"}
 	require.Equal(t, want, calls)
+}
+
+func TestRouterPanicsOnNilHandler(t *testing.T) {
+	tests := []struct {
+		name     string
+		register func(r *Router)
+		want     string
+	}{
+		{name: "command", register: func(r *Router) { r.RegisterCommand("start", nil) }, want: "telegram: nil handler for command start"},
+		{name: "callback", register: func(r *Router) { r.RegisterCallback("beer", nil) }, want: "telegram: nil handler for callback prefix beer"},
+		{name: "text", register: func(r *Router) { r.RegisterText(nil) }, want: "telegram: nil text handler"},
+		{name: "fallback", register: func(r *Router) { r.RegisterFallback(nil) }, want: "telegram: nil fallback handler"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.PanicsWithValue(t, tt.want, func() { tt.register(NewRouter()) })
+		})
+	}
+}
+
+func TestRouterBuildAppliesMiddlewaresOnce(t *testing.T) {
+	var (
+		router   = NewRouter()
+		wrapped  int
+		lateUsed bool
+		handled  int
+	)
+
+	router.Use(func(next Handler) Handler {
+		wrapped++
+		return next
+	})
+
+	h := router.Build()
+
+	// handlers registered after Build are still routed, middlewares are not applied
+	router.RegisterText(func(context.Context, tgbotapi.Update) error {
+		handled++
+		return nil
+	})
+	router.Use(func(next Handler) Handler {
+		lateUsed = true
+		return next
+	})
+
+	upd := tgbotapi.Update{Message: &tgbotapi.Message{Text: "hello"}}
+	for range 3 {
+		require.NoError(t, h(context.Background(), upd))
+	}
+
+	require.Equal(t, 1, wrapped, "middleware chain was rebuilt")
+	require.Equal(t, 3, handled)
+	require.False(t, lateUsed, "middleware added after Build was applied")
 }

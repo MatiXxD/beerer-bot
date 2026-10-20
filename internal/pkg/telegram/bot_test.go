@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ type stubUpdateSource struct {
 	updatesErr error
 	stopErr    error
 	stopped    chan struct{}
+	closeOnce  sync.Once
 }
 
 func newTestBot(source UpdateSource, handler Handler, cfg Config) *Bot {
@@ -36,15 +38,27 @@ func (s *stubUpdateSource) Stop() error {
 		close(s.stopped)
 	}
 
+	s.closeUpdates()
+
 	return s.stopErr
+}
+
+// closeUpdates closes the updates channel once, like the real source does on stop.
+func (s *stubUpdateSource) closeUpdates() {
+	s.closeOnce.Do(func() {
+		if s.updates != nil {
+			close(s.updates)
+		}
+	})
 }
 
 func TestNewBotAppliesConfig(t *testing.T) {
 	apiClient := &telegramAPIClient{}
 	api := apiClient.bot(t)
-	bot := NewBot(func(context.Context, tgbotapi.Update) error { return nil }, api, Config{
+	bot, err := NewBot(func(context.Context, tgbotapi.Update) error { return nil }, api, Config{
 		LongPolling: LongPollingConfig{Enabled: true},
 	})
+	require.NoError(t, err)
 
 	require.Equal(t, defaultLongPollingTimeout, bot.cfg.LongPolling.Timeout)
 	require.Equal(t, defaultQueueSize, bot.cfg.Dispatcher.QueueSize)
@@ -55,6 +69,15 @@ func TestNewBotAppliesConfig(t *testing.T) {
 	source, ok := bot.source.(*LongPolling)
 	require.True(t, ok)
 	require.Equal(t, bot.cfg.LongPolling, source.cfg)
+}
+
+func TestNewBotReturnsErrorWhenLongPollingDisabled(t *testing.T) {
+	apiClient := &telegramAPIClient{}
+	api := apiClient.bot(t)
+
+	bot, err := NewBot(func(context.Context, tgbotapi.Update) error { return nil }, api, Config{})
+	require.ErrorIs(t, err, ErrWebhookNotImplemented)
+	require.Nil(t, bot)
 }
 
 func TestBotRunReturnsUpdatesError(t *testing.T) {
@@ -71,7 +94,7 @@ func TestBotRunReturnsOnClosedUpdates(t *testing.T) {
 		updates: make(chan tgbotapi.Update),
 		stopped: make(chan struct{}),
 	}
-	close(source.updates)
+	source.closeUpdates()
 
 	bot := newTestBot(source, func(context.Context, tgbotapi.Update) error { return nil }, testConfig())
 	done := make(chan error, 1)
@@ -136,9 +159,9 @@ func TestBotRunReturnsDeadlineExceeded(t *testing.T) {
 func TestBotRunDispatchesUpdates(t *testing.T) {
 	updates := make(chan tgbotapi.Update, 1)
 	updates <- tgbotapi.Update{UpdateID: 7, Message: &tgbotapi.Message{From: &tgbotapi.User{ID: 42}}}
-	close(updates)
 
 	source := &stubUpdateSource{updates: updates, stopped: make(chan struct{})}
+	source.closeUpdates()
 	handled := make(chan int, 1)
 
 	bot := newTestBot(source, func(_ context.Context, upd tgbotapi.Update) error {

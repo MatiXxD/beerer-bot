@@ -1,6 +1,8 @@
 package telegram
 
 import (
+	"sync"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"github.com/MatiXxD/beerer-bot/pkg/utils"
@@ -11,6 +13,8 @@ import (
 type LongPolling struct {
 	api *tgbotapi.BotAPI
 	cfg LongPollingConfig
+
+	stopOnce sync.Once
 }
 
 // NewLongPolling creates a new LongPolling instance.
@@ -38,6 +42,6 @@ func (lp *LongPolling) Updates() (<-chan tgbotapi.Update, error) {
 
 // Stop stops the long polling mechanism.
 func (lp *LongPolling) Stop() error {
-	lp.api.StopReceivingUpdates()
+	lp.stopOnce.Do(lp.api.StopReceivingUpdates)
 	return nil
 }
